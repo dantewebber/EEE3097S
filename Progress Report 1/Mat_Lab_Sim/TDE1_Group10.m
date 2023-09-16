@@ -10,42 +10,45 @@
 
 % Call the function to find the delay for signal_m4
 TDOA_m4 = findSignalDelay(signal_m4, signal_m1, fs);
+actual_TDOA_m4 = delay_m4 - delay_m1;
 
 % Calculate accuracy for signal_m4
-accuracy_m4 = 100 * (1 - abs(((delay_m4-delay_m1) - TDOA_m4) / (delay_m4 - delay_m1)));
+accuracy_m4 = 100 * (1 - abs((actual_TDOA_m4 - TDOA_m4) / (actual_TDOA_m4)));
 
 % Display the result for signal_m4
 fprintf('Microphone 4 TDOA:\n');
 fprintf('  Calculated Delay: %.7f seconds\n', TDOA_m4);
-fprintf('  Reference Delay:  %.7f seconds\n', (delay_m4-delay_m1));
+fprintf('  Reference Delay:  %.7f seconds\n', (actual_TDOA_m4));
 fprintf('  Accuracy: %.2f%%\n', accuracy_m4);
 
 fprintf('\n'); % Add a newline separator
 
 % Call the function to find the delay for signal_m3
 TDOA_m3 = findSignalDelay(signal_m3, signal_m1, fs);
+actual_TDOA_m3 = delay_m3 - delay_m1;
 
 % Calculate accuracy for signal_m3
-accuracy_m3 = 100 * (1 - abs(((delay_m3-delay_m1) - TDOA_m3) / (delay_m3 - delay_m1)));
+accuracy_m3 = 100 * (1 - abs(((actual_TDOA_m3) - TDOA_m3) / (actual_TDOA_m3)));
 
 % Display the result for signal_m4
 fprintf('Microphone 3 TDOA:\n');
 fprintf('  Calculated Delay: %.7f seconds\n', TDOA_m3);
-fprintf('  Reference Delay:  %.7f seconds\n', (delay_m3-delay_m1));
+fprintf('  Reference Delay:  %.7f seconds\n', (actual_TDOA_m3));
 fprintf('  Accuracy: %.2f%%\n', accuracy_m3);
 
 fprintf('\n'); % Add a newline separator
 
 % Call the function to find the delay for signal_m2
 TDOA_m2 = findSignalDelay(signal_m2, signal_m1, fs);
+actual_TDOA_m2 = delay_m2 - delay_m1;
 
 % Calculate accuracy for signal_m2
-accuracy_m2 = 100 * (1 - abs(((delay_m2-delay_m1) - TDOA_m2) / (delay_m2 - delay_m1)));
+accuracy_m2 = 100 * (1 - abs(((actual_TDOA_m2) - TDOA_m2) / (actual_TDOA_m2)));
 
 % Display the result for signal_m2
 fprintf('Microphone 2 TDOA:\n');
 fprintf('  Calculated Delay: %.7f seconds\n', TDOA_m2);
-fprintf('  Reference Delay:  %.7f seconds\n', (delay_m2-delay_m1));
+fprintf('  Reference Delay:  %.7f seconds\n', (actual_TDOA_m2));
 fprintf('  Accuracy: %.2f%%\n', accuracy_m2);
 
 fprintf('\n'); % Add a newline separator

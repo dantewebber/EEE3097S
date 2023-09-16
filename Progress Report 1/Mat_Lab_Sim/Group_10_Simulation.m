@@ -28,7 +28,7 @@ display(Sound_source_position);
 
 % Simulated audio signal parameters
 fs = 44100;                    % Sampling frequency (Hz)
-duration = 2;           % Duration of the signal (seconds)
+duration = 0.1;           % Duration of the signal (seconds)
 chirp_frequency = 1000;        % Chirp signal frequency (Hz)
 
 % Generate a simulated audio signal (chirp signal)
@@ -51,74 +51,84 @@ delay_m4 = Distance_m4_ss / speed_of_sound;
 
 
 % Generate random noise for each microphone with slight variations
-noise_amplitude = 0.4;%.4;  % Adjust the noise amplitude as needed
+noise_amplitude = 0.4;  % Adjust the noise amplitude as needed
 noise_m1 = noise_amplitude * (randn(size(t)) + 0.4 * rand * randn(size(t))); % Slightly different noise for microphone 1
 noise_m2 = noise_amplitude * (randn(size(t)) + 0.4 * rand * randn(size(t))); % Slightly different noise for microphone 2
 noise_m3 = noise_amplitude * (randn(size(t)) + 0.4 * rand * randn(size(t))); % Slightly different noise for microphone 3
 noise_m4 = noise_amplitude * (randn(size(t)) + 0.4 * rand * randn(size(t))); % Slightly different noise for microphone 4
 
 % Add noise to the original chirp signal after applying time delays
-signal_m1 = chirp(t - delay_m1, 0, duration, chirp_frequency) + noise_m1;
-signal_m2 = chirp(t - delay_m2, 0, duration, chirp_frequency) + noise_m2;
-signal_m3 = chirp(t - delay_m3, 0, duration, chirp_frequency) + noise_m3;
-signal_m4 = chirp(t - delay_m4, 0, duration, chirp_frequency) + noise_m4;
+signal_m1 = chirp(t - delay_m1, 0, duration, chirp_frequency) + noise_m1(1:size(t));
+signal_m2 = chirp(t - delay_m2, 0, duration, chirp_frequency) + noise_m2(1:size(t));
+signal_m3 = chirp(t - delay_m3, 0, duration, chirp_frequency) + noise_m3(1:size(t));
+signal_m4 = chirp(t - delay_m4, 0, duration, chirp_frequency) + noise_m4(1:size(t));
+
+% Signals below are generated for single frequency signal testing. They are
+% cosine waves generated with the frequency defined in chirp_frequency
 
 % signal_m1 = cos(2*pi*chirp_frequency*(t-delay_m1)) + noise_m1;
 % signal_m2 = cos(2*pi*chirp_frequency*(t-delay_m2)) + noise_m2;
 % signal_m3 = cos(2*pi*chirp_frequency*(t-delay_m3)) + noise_m3;
 % signal_m4 = cos(2*pi*chirp_frequency*(t-delay_m4)) + noise_m4;
 
+% Uncomment line below to show a plot of the original sound source signal
+% and all of the 'recorded' signals
 
+% plotSignals(t, signal, signal_m1, signal_m2, signal_m3, signal_m4, delay_m1, delay_m2, delay_m3, delay_m4);
 
-% Create a figure with subplots to visualize the signals
-figure;
+function plotSignals(t, signal, signal_m1, signal_m2, signal_m3, signal_m4, delay_m1, delay_m2, delay_m3, delay_m4)
 
-% Plot the original sound source signal
-subplot(5, 1, 1);
-plot(t, signal);
-title('Sound Source Signal');
-xlabel('Time (s)');
-ylabel('Amplitude');
+    % Create a figure with subplots to visualize the signals
+    figure;
+    
+    % Plot the original sound source signal
+    subplot(5, 1, 1);
+    plot(t, signal);
+    title('Sound Source Signal');
+    xlabel('Time (s)');
+    ylabel('Amplitude');
+    
+    % Plot Microphone 1 Recorded Signal with TDE line
+    subplot(5, 1, 2);
+    plot(t, signal_m1);
+    hold on;
+    plot([delay_m1, delay_m1], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 1
+    hold off;
+    title('Microphone 1 Recorded Signal');
+    xlabel('Time (s)');
+    ylabel('Amplitude');
+    
+    % Plot Microphone 2 Recorded Signal with TDE line
+    subplot(5, 1, 3);
+    plot(t, signal_m2);
+    hold on;
+    plot([delay_m2, delay_m2], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 2
+    hold off;
+    title('Microphone 2 Recorded Signal');
+    xlabel('Time (s)');
+    ylabel('Amplitude');
+    
+    % Plot Microphone 3 Recorded Signal with TDE line
+    subplot(5, 1, 4);
+    plot(t, signal_m3);
+    hold on;
+    plot([delay_m3, delay_m3], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 3
+    hold off;
+    title('Microphone 3 Recorded Signal');
+    xlabel('Time (s)');
+    ylabel('Amplitude');
+    
+    % Plot Microphone 4 Recorded Signal with TDE line
+    subplot(5, 1, 5);
+    plot(t, signal_m4);
+    hold on;
+    plot([delay_m4, delay_m4], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 4
+    hold off;
+    title('Microphone 4 Recorded Signal');
+    xlabel('Time (s)');
+    ylabel('Amplitude');
 
-% Plot Microphone 1 Recorded Signal with TDE line
-subplot(5, 1, 2);
-plot(t, signal_m1);
-hold on;
-plot([delay_m1, delay_m1], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 1
-hold off;
-title('Microphone 1 Recorded Signal');
-xlabel('Time (s)');
-ylabel('Amplitude');
-
-% Plot Microphone 2 Recorded Signal with TDE line
-subplot(5, 1, 3);
-plot(t, signal_m2);
-hold on;
-plot([delay_m2, delay_m2], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 2
-hold off;
-title('Microphone 2 Recorded Signal');
-xlabel('Time (s)');
-ylabel('Amplitude');
-
-% Plot Microphone 3 Recorded Signal with TDE line
-subplot(5, 1, 4);
-plot(t, signal_m3);
-hold on;
-plot([delay_m3, delay_m3], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 3
-hold off;
-title('Microphone 3 Recorded Signal');
-xlabel('Time (s)');
-ylabel('Amplitude');
-
-% Plot Microphone 4 Recorded Signal with TDE line
-subplot(5, 1, 5);
-plot(t, signal_m4);
-hold on;
-plot([delay_m4, delay_m4], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 4
-hold off;
-title('Microphone 4 Recorded Signal');
-xlabel('Time (s)');
-ylabel('Amplitude');
+end
 
 
 

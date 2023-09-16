@@ -18,6 +18,13 @@ Actual_sound_source_position = Sound_source_position;
 % Distance_m3_ss_1 = delayInSeconds_m3 * speed_of_sound;
 % Distance_m4_ss_1 = delayInSeconds_m4 * speed_of_sound;
 
+% Uncomment the lines below to run the triangulation tests with the actual
+% TDOAs, not the calculated versions.
+TDOA_m2 = actual_TDOA_m2;
+TDOA_m3 = actual_TDOA_m3;
+TDOA_m4 = actual_TDOA_m4;
+
+
 % Calculate differences in distances between reference mic (mic 1) and
 % other mics
 d_1_2 = TDOA_m2 * speed_of_sound;
@@ -119,7 +126,7 @@ fprintf('Predicted Sound Source Position from ref mic and mics 2 and 3: (%.3f, %
 fprintf('Predicted Sound Source Position from ref mic and mics 3 and 4: (%.3f, %.3f)\n', x_3_4);
 fprintf('Predicted Sound Source Position average from 3 readings above: (%.3f, %.3f)\n', x_ave);
 
-% figure;
+%  figure;
 
 hold on;
 plot(Microphone1_position(1), Microphone1_position(2), 'b^');
