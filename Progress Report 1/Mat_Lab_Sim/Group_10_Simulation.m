@@ -1,0 +1,131 @@
+
+%Group_10 Design Simulation
+
+%This section defines important constants used in the program:
+%grid_width and grid_height: Set the dimensions of the grid where the simulation takes place.
+%speed_of_sound: Specifies the speed of sound in the environment (m/s).
+%Microphone and Sound Source Positions: Define positions of microphones and generate a random position for the sound source.
+%Simulated audio signal parameters: Set parameters for the chirp signal used in the simulation.
+%Noise parameters: Adjust noise amplitude for each microphone. Modify as needed for testing.
+
+%Set duration to 1s for better performance 
+%Set duration to 0.2s to view graphs better 
+
+
+
+% Constants
+grid_width = 0.594;            % Width of the grid
+grid_height = 0.841;           % Height of the grid
+speed_of_sound = 343;          % Speed of sound in the environment (m/s)
+
+% Define positions of microphones and a random position for the sound source
+Microphone1_position = [0, 0];
+Microphone2_position = [0, grid_height];
+Microphone3_position = [grid_width, grid_height];
+Microphone4_position = [grid_width, 0];
+Sound_source_position = [rand * (grid_width), rand * (grid_height)];
+display(Sound_source_position);
+
+% Simulated audio signal parameters
+fs = 44100;                    % Sampling frequency (Hz)
+duration = 2;           % Duration of the signal (seconds)
+chirp_frequency = 1000;        % Chirp signal frequency (Hz)
+
+% Generate a simulated audio signal (chirp signal)
+t = 0:1/fs:duration-1/fs;
+signal = chirp(t, 0, duration, chirp_frequency);
+% signal = cos(2*pi*chirp_frequency*t);
+
+% Calculate the distance between the sound source and each microphone
+Distance_m1_ss = sqrt((Sound_source_position(1) - Microphone1_position(1))^2 + (Sound_source_position(2) - Microphone1_position(2))^2);
+Distance_m2_ss = sqrt((Sound_source_position(1) - Microphone2_position(1))^2 + (Sound_source_position(2) - Microphone2_position(2))^2);
+Distance_m3_ss = sqrt((Sound_source_position(1) - Microphone3_position(1))^2 + (Sound_source_position(2) - Microphone3_position(2))^2);
+Distance_m4_ss = sqrt((Sound_source_position(1) - Microphone4_position(1))^2 + (Sound_source_position(2) - Microphone4_position(2))^2);
+
+% Calculate time delays for each microphone
+delay_m1 = Distance_m1_ss / speed_of_sound;
+delay_m2 = Distance_m2_ss / speed_of_sound;
+delay_m3 = Distance_m3_ss / speed_of_sound;
+delay_m4 = Distance_m4_ss / speed_of_sound;
+
+
+
+% Generate random noise for each microphone with slight variations
+noise_amplitude = 0.4;%.4;  % Adjust the noise amplitude as needed
+noise_m1 = noise_amplitude * (randn(size(t)) + 0.4 * rand * randn(size(t))); % Slightly different noise for microphone 1
+noise_m2 = noise_amplitude * (randn(size(t)) + 0.4 * rand * randn(size(t))); % Slightly different noise for microphone 2
+noise_m3 = noise_amplitude * (randn(size(t)) + 0.4 * rand * randn(size(t))); % Slightly different noise for microphone 3
+noise_m4 = noise_amplitude * (randn(size(t)) + 0.4 * rand * randn(size(t))); % Slightly different noise for microphone 4
+
+% Add noise to the original chirp signal after applying time delays
+signal_m1 = chirp(t - delay_m1, 0, duration, chirp_frequency) + noise_m1;
+signal_m2 = chirp(t - delay_m2, 0, duration, chirp_frequency) + noise_m2;
+signal_m3 = chirp(t - delay_m3, 0, duration, chirp_frequency) + noise_m3;
+signal_m4 = chirp(t - delay_m4, 0, duration, chirp_frequency) + noise_m4;
+
+% signal_m1 = cos(2*pi*chirp_frequency*(t-delay_m1)) + noise_m1;
+% signal_m2 = cos(2*pi*chirp_frequency*(t-delay_m2)) + noise_m2;
+% signal_m3 = cos(2*pi*chirp_frequency*(t-delay_m3)) + noise_m3;
+% signal_m4 = cos(2*pi*chirp_frequency*(t-delay_m4)) + noise_m4;
+
+
+
+% Create a figure with subplots to visualize the signals
+figure;
+
+% Plot the original sound source signal
+subplot(5, 1, 1);
+plot(t, signal);
+title('Sound Source Signal');
+xlabel('Time (s)');
+ylabel('Amplitude');
+
+% Plot Microphone 1 Recorded Signal with TDE line
+subplot(5, 1, 2);
+plot(t, signal_m1);
+hold on;
+plot([delay_m1, delay_m1], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 1
+hold off;
+title('Microphone 1 Recorded Signal');
+xlabel('Time (s)');
+ylabel('Amplitude');
+
+% Plot Microphone 2 Recorded Signal with TDE line
+subplot(5, 1, 3);
+plot(t, signal_m2);
+hold on;
+plot([delay_m2, delay_m2], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 2
+hold off;
+title('Microphone 2 Recorded Signal');
+xlabel('Time (s)');
+ylabel('Amplitude');
+
+% Plot Microphone 3 Recorded Signal with TDE line
+subplot(5, 1, 4);
+plot(t, signal_m3);
+hold on;
+plot([delay_m3, delay_m3], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 3
+hold off;
+title('Microphone 3 Recorded Signal');
+xlabel('Time (s)');
+ylabel('Amplitude');
+
+% Plot Microphone 4 Recorded Signal with TDE line
+subplot(5, 1, 5);
+plot(t, signal_m4);
+hold on;
+plot([delay_m4, delay_m4], ylim, 'r--'); % Add a red dashed line at the TDE for Microphone 4
+hold off;
+title('Microphone 4 Recorded Signal');
+xlabel('Time (s)');
+ylabel('Amplitude');
+
+
+
+
+
+
+
+
+
+
