@@ -1,19 +1,209 @@
+import os
+import pygame
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.io.wavfile as wav
 from scipy.signal import chirp
 from scipy.optimize import fsolve
+from scipy.signal import butter, lfilter
+from datetime import datetime
+import tkinter as tk
+from tkinter import ttk
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# Signal definition
 # Constants
-grid_width = 0.49 # 0.594  # Width of the grid
-grid_height = 0.783 # 0.841  # Height of the grid
+grid_width = 0.783 # 0.841 - A1 # Width of the grid [m]
+grid_height = 0.49 # 0.594 - A1 # Height of the grid [m]
 speed_of_sound = 343  # Speed of sound in the environment (m/s)
+fs = 48000 # sample rate (Hz)
 
 # Define positions of microphones and a random position for the sound source
 Microphone1_position = [0, 0]
 Microphone2_position = [0, grid_height]
 Microphone3_position = [grid_width, grid_height]
 Microphone4_position = [grid_width, 0]
+
+# Folders
+current_directory = os.getcwd()
+audio_folder = os.path.join(current_directory, "audio")
+    
+
+# READING WAV FILE IN
+def play_wav_file(file_path):
+    pygame.mixer.init()
+    pygame.mixer.music.load(file_path)
+    pygame.mixer.music.play()
+    pygame.time.wait(5000)  # You can change this if needed
+    pygame.mixer.quit()
+    
+def read_wav_files():
+    seconds_to_remove_start = 0.5
+    seconds_to_remove_end = 0.5
+    file_list = os.listdir(audio_folder)
+    n = 0
+    filenames = ["",""]
+
+    for file_name in file_list:
+        audio_file_path = os.path.join(audio_folder, file_name)
+        filenames[n] = file_name.replace(".wav", "")
+        n += 1
+    
+        sample_rate, stereo_audio_data = wav.read(audio_file_path)
+        
+        # Calculate the number of samples to remove from the start and end
+        samples_to_remove_start = int(sample_rate * seconds_to_remove_start)
+        samples_to_remove_end = int(sample_rate * seconds_to_remove_end)
+        
+        # Separate left and right channels
+        left_channel = stereo_audio_data[:, 0]
+        right_channel = stereo_audio_data[:, 1]
+        
+        # Remove the specified number of samples from the start and end
+        chopped_left = left_channel[samples_to_remove_start:-samples_to_remove_end]
+        chopped_right = right_channel[samples_to_remove_start:-samples_to_remove_end]
+        
+        # Design a 6th order bandpass filter with a passband from 100 Hz to 20000 Hz
+        lowcut = 100
+        highcut = 20000
+        nyquist = 0.5 * sample_rate
+        low = lowcut / nyquist
+        high = highcut / nyquist
+        b, a = butter(6, [low, high], btype='band')
+        
+        # Apply the bandpass filter to the edited audio data
+        filtered_left = lfilter(b, a, left_channel)
+        filtered_right = lfilter(b, a, right_channel)
+        
+        if (file_name.__contains__("pi0")):
+            filtered_signal_1 = np.array(filtered_right)
+            filtered_signal_2 = np.array(filtered_left)
+        else:
+            filtered_signal_3 = np.array(filtered_left)
+            filtered_signal_4 = np.array(filtered_right)
+    
+    # Calculate the time values
+    # REMOVE MICROPHONE STARTUP 'POPS' FROM SIGNALS
+    
+    num_samples = len(filtered_signal_1)
+    t1 = np.linspace(0, (num_samples - 1) / sample_rate, num_samples)
+    filtered_signal_1 = filtered_signal_1[samples_to_remove_start:-samples_to_remove_end]
+    t1 = t1[samples_to_remove_start:-samples_to_remove_end]
+    
+    num_samples = len(filtered_signal_2)
+    t2 = np.linspace(0, (num_samples - 1) / sample_rate, num_samples)
+    filtered_signal_2 = filtered_signal_2[samples_to_remove_start:-samples_to_remove_end]
+    t2 = t2[samples_to_remove_start:-samples_to_remove_end]
+    
+    num_samples = len(filtered_signal_3)
+    t3 = np.linspace(0, (num_samples - 1) / sample_rate, num_samples)
+    filtered_signal_3 = filtered_signal_3[samples_to_remove_start:-samples_to_remove_end]
+    t3 = t3[samples_to_remove_start:-samples_to_remove_end]
+    
+    num_samples = len(filtered_signal_4)
+    t4 = np.linspace(0, (num_samples - 1) / sample_rate, num_samples)
+    filtered_signal_4 = filtered_signal_4[samples_to_remove_start:-samples_to_remove_end]
+    t4 = t4[samples_to_remove_start:-samples_to_remove_end]
+    
+    print(sample_rate)
+    print(filenames[0])
+    print(filenames[1])
+    
+    # REMOVE TIME OFFSET FROM LEADING SIGNAL (STARTED RECORDING FIRST)
+    
+    time_offset = calculate_time_difference(filenames[0], filenames[1])
+    if ((time_offset < 0) and (filenames[0].__contains__("pi0"))):
+        # pi1 started before pi0
+        time_offset = -time_offset
+        sample_offset = int(sample_rate * time_offset)
+        filtered_signal_3 = filtered_signal_3[sample_offset:-1]
+        t3 = t3[sample_offset:-1]
+        filtered_signal_4 = filtered_signal_4[sample_offset:-1]
+        t4 = t4[sample_offset:-1]
+    elif ((time_offset<0) and (filenames[0].__contains__("pi1"))):
+        # pi0 started before pi0
+        time_offset = -time_offset
+        sample_offset = int(sample_rate * time_offset)
+        filtered_signal_1 = filtered_signal_1[sample_offset:-1]
+        # t1 = t1[sample_offset:-1]
+        filtered_signal_2 = filtered_signal_2[sample_offset:-1]
+        # t2 = t2[sample_offset:-1]
+    elif ((time_offset>0) and (filenames[0].__contains__("pi0"))):
+        # pi0 started before pi1
+        sample_offset = int(sample_rate * time_offset)
+        filtered_signal_1 = filtered_signal_1[sample_offset:-1]
+        t1 = t1[sample_offset:-1]
+        filtered_signal_2 = filtered_signal_2[sample_offset:-1]
+        t2 = t2[sample_offset:-1]
+    elif ((time_offset>0) and (filenames[0].__contains__("pi1"))):
+        # pi1 started before pi0
+        sample_offset = int(sample_rate * time_offset)
+        filtered_signal_3 = filtered_signal_3[sample_offset:-1]
+        t3 = t3[sample_offset:-1]
+        filtered_signal_4 = filtered_signal_4[sample_offset:-1]
+        t4 = t4[sample_offset:-1]
+    
+    
+    time_offset = 0.2
+    sample_offset = int(sample_rate * time_offset)
+    
+    filtered_signal_1 = filtered_signal_1[0:sample_offset]
+    filtered_signal_2 = filtered_signal_2[0:sample_offset]
+    filtered_signal_3 = filtered_signal_3[0:sample_offset]
+    filtered_signal_4 = filtered_signal_4[0:sample_offset]
+    
+    t1 = t1[0:sample_offset]
+    t2 = t2[0:sample_offset]
+    t3 = t3[0:sample_offset]
+    t4 = t4[0:sample_offset]
+         
+    # time_offset = calculate_time_difference("i_05_12_09_300", "i_05_12_07_200")
+    print(time_offset)
+    
+    # signal_plot(filtered_signal_1, filtered_signal_2, filtered_signal_3,filtered_signal_4, t1, t2, t3, t4)
+    
+    acoustic_localisation(filtered_signal_1, filtered_signal_2, filtered_signal_3, filtered_signal_4)
+
+def parse_time_string(time_str):
+    # Split the string by underscores and convert components to integers
+    components = time_str.split('_')
+    if (len(components)==4):
+        seconds = int(components[-1])
+        minutes = int(components[-2])
+        hours = int(components[-3])
+        print(hours, ":", minutes, ":", seconds)
+        time = datetime(1, 1, 1, hours, minutes, seconds)
+    else:
+        microseconds = int(components[-1])*1000
+        seconds = int(components[-2])
+        minutes = int(components[-3])
+        hours = int(components[-4])
+        print(hours, ":", minutes, ":", seconds, ":", microseconds)
+        time = datetime(1, 1, 1, hours, minutes, seconds, microseconds)
+    
+    return time
+
+def calculate_time_difference(time_str1, time_str2):
+    # Parse the time strings into datetime objects
+    time1 = parse_time_string(time_str1)
+    time2 = parse_time_string(time_str2)
+    
+    print(time1)
+    print(time2)
+
+    # Calculate the time difference in seconds
+    time_difference = (time2 - time1).total_seconds()
+    return time_difference
+
+    # # If milliseconds are present, round to the nearest millisecond, else round to the nearest second
+    # if parse_time_string(time_str1)[-1] > 0 or parse_time_string(time_str2)[-1] > 0:
+    #     return round(time_difference, 3)  # Milliseconds
+    # else:
+    #     return round(time_difference)  # Seconds
+
+
+# Signal definition
+
 
 def Simulation():
     global Sound_source_position
@@ -25,7 +215,7 @@ def Simulation():
 
     # Simulated audio signal parameters
     global fs
-    fs = 44100  # Sampling frequency (Hz)
+    fs = 48000  # Sampling frequency (Hz)
     duration = 0.1  # Duration of the signal (seconds)
     chirp_frequency = 1000  # Chirp signal frequency (Hz)
 
@@ -77,7 +267,7 @@ def Simulation():
     sim_sig_m3 = chirp(t - delay_m3, 0, duration, chirp_frequency) + noise_m3
     sim_sig_m4 = chirp(t - delay_m4, 0, duration, chirp_frequency) + noise_m4
     
-    main(sim_sig_m1, sim_sig_m2, sim_sig_m3, sim_sig_m4)
+    acoustic_localisation(sim_sig_m1, sim_sig_m2, sim_sig_m3, sim_sig_m4)
     
     # Actual TDOA and accuracy as a result of
     actual_TDOA_m4 = delay_m4 - delay_m1
@@ -131,46 +321,46 @@ def Simulation():
     print('Accuracy of average position: %.3f%%' % acc_ave)
     print('Distance from actual sound source: %.3fm' % error_ave)
 
-def signal_plot():
+def signal_plot(sim_sig_m1, sim_sig_m2, sim_sig_m3, sim_sig_m4, t1, t2, t3, t4):
     
     # Create a figure with subplots to visualize the signals
     plt.figure()
 
-    # Plot the original sound source signal
-    plt.subplot(5, 1, 1)
-    plt.plot(t, signal)
-    plt.title('Sound Source Signal')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Amplitude')
+    # # Plot the original sound source signal
+    # plt.subplot(5, 1, 1)
+    # plt.plot(t, signal)
+    # plt.title('Sound Source Signal')
+    # plt.xlabel('Time (s)')
+    # plt.ylabel('Amplitude')
 
     # Plot Microphone 1 Recorded Signal with TDE line
     plt.subplot(5, 1, 2)
-    plt.plot(t, sim_sig_m1)
-    plt.axvline(x=delay_m1, color='r', linestyle='--')  # Add a red dashed line at the TDE for Microphone 1
+    plt.plot(t1, sim_sig_m1)
+    # plt.axvline(x=delay_m1, color='r', linestyle='--')  # Add a red dashed line at the TDE for Microphone 1
     plt.title('Microphone 1 Recorded Signal')
     plt.xlabel('Time (s)')
     plt.ylabel('Amplitude')
 
     # Plot Microphone 2 Recorded Signal with TDE line
     plt.subplot(5, 1, 3)
-    plt.plot(t, sim_sig_m2)
-    plt.axvline(x=delay_m2, color='r', linestyle='--')  # Add a red dashed line at the TDE for Microphone 2
+    plt.plot(t2, sim_sig_m2)
+    # plt.axvline(x=delay_m2, color='r', linestyle='--')  # Add a red dashed line at the TDE for Microphone 2
     plt.title('Microphone 2 Recorded Signal')
     plt.xlabel('Time (s)')
     plt.ylabel('Amplitude')
 
     # Plot Microphone 3 Recorded Signal with TDE line
     plt.subplot(5, 1, 4)
-    plt.plot(t, sim_sig_m3)
-    plt.axvline(x=delay_m3, color='r', linestyle='--')  # Add a red dashed line at the TDE for Microphone 3
+    plt.plot(t3, sim_sig_m3)
+    # plt.axvline(x=delay_m3, color='r', linestyle='--')  # Add a red dashed line at the TDE for Microphone 3
     plt.title('Microphone 3 Recorded Signal')
     plt.xlabel('Time (s)')
     plt.ylabel('Amplitude')
 
     # Plot Microphone 4 Recorded Signal with TDE line
     plt.subplot(5, 1, 5)
-    plt.plot(t, sim_sig_m4)
-    plt.axvline(x=delay_m4, color='r', linestyle='--')  # Add a red dashed line at the TDE for Microphone 4
+    plt.plot(t4, sim_sig_m4)
+    # plt.axvline(x=delay_m4, color='r', linestyle='--')  # Add a red dashed line at the TDE for Microphone 4
     plt.title('Microphone 4 Recorded Signal')
     plt.xlabel('Time (s)')
     plt.ylabel('Amplitude')
@@ -319,7 +509,7 @@ def plot_output():
     plt.plot(Microphone2_position[0], Microphone2_position[1], 'b^', label='Mic 2')
     plt.plot(Microphone3_position[0], Microphone3_position[1], 'b^', label='Mic 3')
     plt.plot(Microphone4_position[0], Microphone4_position[1], 'b^', label='Mic 4')
-    plt.plot(Sound_source_position[0], Sound_source_position[1], 'r*', label='Actual Sound Source')
+    # plt.plot(Sound_source_position[0], Sound_source_position[1], 'r*', label='Actual Sound Source')
     plt.plot(x_ave[0], x_ave[1], 'k.', label='Triangulated Position (Average)')
 
     # Uncomment these lines to plot the intersection points of hyperbolae
@@ -333,10 +523,99 @@ def plot_output():
     plt.ylabel('y in meters')
     plt.show()
 
-def main(signal_1, signal_2, signal_3, signal_4):
+def acoustic_localisation(signal_1, signal_2, signal_3, signal_4):
+    
     Find_TDOA(signal_1, signal_2, signal_3, signal_4)
     Triangulation(TDOA_m2, TDOA_m3, TDOA_m4)
-    plot_output()
+    update_graph(x_ave[0], x_ave[1])
+    # plot_output()
 
+# read_wav_files()
 # Simulation()
 # signal_plot()
+
+#GUI
+# Function to start the process
+def start_process():
+    global positionX, positionY
+    
+    read_wav_files()
+
+    # Set the new position (0.3, 0.4)
+    # positionX = 0.6
+    # positionY = 0.4
+
+    # Update the graph with a red dot
+    # update_graph()
+    
+# Function to stop the process
+def stop_process():
+    # Add your stop process logic here
+    pass
+
+# Function to update the graph with a red dot
+def update_graph(positionX, positionY):
+    plot.clear()
+    plot.set_xlabel("X-axis")
+    plot.set_ylabel("Y-axis")
+    plot.set_xlim(0, 0.8)
+    plot.set_ylim(0, 0.5)
+    plot.set_title("Acoustic Triangulation")
+
+    # Add grid lines spaced 0.1 meters apart
+    plot.grid(which='both', axis='both', linestyle='--', color='gray', linewidth=0.5, alpha=0.5)
+    plot.set_xticks([i / 10 for i in range(9)])
+    plot.set_yticks([i / 10 for i in range(6)])  # Corrected line
+
+    # Plot the red dot at the specified position
+    plot.plot(positionX, positionY, marker='o', markersize=4, color='red')
+
+    # Embed the Matplotlib figure in the Tkinter window
+    canvas.draw()
+
+# Initialize positionX and positionY
+positionX = 0
+positionY = 0
+
+# Create a Tkinter window
+root = tk.Tk()
+root.configure(bg="white")
+screen_width = root.winfo_screenwidth()
+screen_height = root.winfo_screenheight()
+root.geometry(f"{screen_width}x{screen_height}+0+0")
+
+# Create "Start" button
+start_button = tk.Button(root, text="Start", command=start_process)
+start_button.place(relx=0.1, rely=0.2, relwidth=0.2, relheight=0.1)
+
+# Create "Stop" button
+stop_button = tk.Button(root, text="Stop", command=stop_process)
+stop_button.place(relx=0.1, rely=0.35, relwidth=0.2, relheight=0.1)
+
+# Create a frame for the XY graph
+graph_frame = ttk.Frame(root)
+graph_frame.place(relx=0.6, rely=0, relwidth=0.4, relheight=1)
+
+# Create a Matplotlib figure
+figure = Figure(figsize=(5, 4), dpi=100)
+plot = figure.add_subplot(111)
+
+# Set labels and title for the blank graph
+plot.set_xlabel("X-axis")
+plot.set_ylabel("Y-axis")
+plot.set_xlim(0, 0.8)
+plot.set_ylim(0, 0.5)
+plot.set_title("Acoustic Triangulation")
+
+# Add grid lines spaced 0.1 meters apart
+plot.grid(which='both', axis='both', linestyle='--', color='gray', linewidth=0.5, alpha=0.5)
+plot.set_xticks([i / 10 for i in range(9)])
+plot.set_yticks([i / 10 for i in range(6)])  # Corrected line
+
+# Embed the Matplotlib figure in the Tkinter window
+canvas = FigureCanvasTkAgg(figure, master=graph_frame)
+canvas_widget = canvas.get_tk_widget()
+canvas_widget.pack()
+
+# Start the Tkinter event loop
+root.mainloop()
