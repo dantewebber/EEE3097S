@@ -1,4 +1,3 @@
-import math
 import os
 import pygame
 import subprocess
@@ -16,6 +15,9 @@ from tkinter import ttk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import Text
+from tkinter.scrolledtext import ScrolledText
+import threading
+import paramiko
 
 # Program Constants
 
@@ -25,6 +27,7 @@ grid_height = 0.49 # 0.594 - A1 # Height of the grid [m]
 speed_of_sound = 343  # Speed of sound in the environment (m/s)
 raspberry_pis = ["pi@raspberrypi.local", "pi@raspberrypi1.local"]
 fs = 48000 # sample rate (Hz)
+stop_triangulation = False
 
 # Define positions of microphones
 mic1_pos = [0, grid_height]
@@ -40,18 +43,89 @@ audio_folder = os.path.join(current_directory, "audio")
 target_file = "start.txt"
 destination = "/home/pi/"
 
+# Controlling Pi's recording and sending audio files
+def initializeSSH():
+    
+    global pi1_hostname
+    global pi2_hostname
+    global private_key_path
+    global start_command1
+    global start_command2
+    global end_command1
+    global end
+    global mykey
+    global pi1_ssh
+    global pi2_ssh
+
+    pi1_hostname = 'raspberrypi.local'
+    pi2_hostname = 'raspberrypi1.local'
+    private_key_path = '/home/dantewebber/.ssh/id_rsa'
+
+    # Define the command to start recording on the Raspberry Pi
+    start_command1 = 'mkdir audio && arecord -D plughw:0 -c2 -r 48000 -f S32_LE -t wav -V stereo -d 1 /home/pi/audio/raspberrypi_07:19:01.294061.wav'
+    start_command2 = "mkdir audio && arecord -D plughw:0 -c2 -r 48000 -f S32_LE -t wav -V stereo -d 1 /home/pi/audio/raspberrypi1_07:19:01.292324.wav"
+    end_command1 = "/home/pi/send.sh"
+    end = "rm -r /home/pi/audio"
+
+    mykey = paramiko.RSAKey(filename=private_key_path)
+
+    # Create SSH clients for both Raspberry Pi devices
+    pi1_ssh = paramiko.SSHClient()
+    pi1_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    pi1_ssh.connect(pi1_hostname, username='pi', pkey=mykey)
+
+    pi2_ssh = paramiko.SSHClient()
+    pi2_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    pi2_ssh.connect(pi2_hostname, username="pi", pkey=mykey)
+
+def record_send():
+    # Send the start command to both Raspberry Pi devices
+    pi1_stdin, pi1_stdout, pi1_stderr = pi1_ssh.exec_command(start_command1)
+    pi2_stdin, pi2_stdout, pi2_stderr = pi2_ssh.exec_command(start_command2)
+
+    pi1_exit_status = pi1_stdout.channel.recv_exit_status()
+    pi2_exit_status = pi2_stdout.channel.recv_exit_status()
+
+    while True:
+        pi1_exit_status = pi1_stdout.channel.recv_exit_status()
+        pi2_exit_status = pi2_stdout.channel.recv_exit_status()
+        if pi1_exit_status == 0 and pi2_exit_status == 0:
+            break
+
+    # Send files to master laptop
+    pi1_stdin, pi1_stdout, pi1_stderr = pi1_ssh.exec_command(end_command1)
+    pi2_stdin, pi2_stdout, pi2_stderr = pi2_ssh.exec_command(end_command1)
+
+    while True:
+        pi1_exit_status = pi1_stdout.channel.recv_exit_status()
+        pi2_exit_status = pi2_stdout.channel.recv_exit_status()
+        if pi1_exit_status == 0 and pi2_exit_status == 0:
+            break
+
+    # Send command to start audio file reading here
+
+    pi1_ssh.exec_command(end)
+    pi2_ssh.exec_command(end)
+
+def closeSSH():
+    # Close the SSH connections
+    pi1_ssh.close()
+    pi2_ssh.close()
+
 # GUI
 
 def update_status(status_text):
-    status_box.delete(1.0, "end")  # Clear existing content
+    global status_box
+    # status_box.delete(1.0, "end")  # Clear existing content
     status_box.insert("end", status_text)  # Insert new status text
 
 # Function to start the process
 def start_process():
-    global positionX, positionY
+    global stop_triangulation
+    stop_triangulation = False
     
     # Update the status text
-    update_status("Started.")
+    update_status("Started.\n")
 
     start()
 
@@ -60,11 +134,13 @@ def start_process():
     
 # Function to stop the process
 def stop_process():
-    # Add your stop process logic here
-    exit()
+    global stop_triangulation
+    stop_triangulation = True
 
 # Function to update the graph with a red dot
 def update_graph(positionX, positionY):
+    global plot
+    
     plot.clear()
     plot.set_xlabel("X-axis")
     plot.set_ylabel("Y-axis")
@@ -87,36 +163,32 @@ def update_graph(positionX, positionY):
 
 def start():
     
+    # single_triangulation()
+    
+    task_thread = threading.Thread(target=continuous_triangulation)
+    task_thread.start()
+    
+    # Plot all signals
+    # signal_plot(signals[0], signals[1], signals[2], signals[3], times[0], times[1], times[2], times[3])
+    
+def single_triangulation():
     # Send file to both Raspberry Pis
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(send_file_to_raspberry_pi, raspberry_pis)
     
-    # Rather call wait_for_audio_files() in main after calling start() so that this can be run independently
-    
-    update_status("Successfully sent start cmd to pis")
+    update_status("Successfully sent start cmd to pis\n")
     print("Successfully sent start cmd to pis")
     
     # Extract signals from audio files
     signals, times, first_signal, time_offset = wait_for_audio_files()
     
-    # SIMULATION SETUP: first parameter is a signal, 2nd is simulated position
-    # Uncomment lines below and comment all lines under it in start() function to run simulation
-    
-    sim_pos = [grid_width/2, grid_height/2]
-    sim_pos = [0.3, 0.2]
-    # signals, times, first_signal, time_offset = read_wav_files()
-    # create_sim2(signals[0], sim_pos)
-    
     # Process signals
-    # signals, times = process_signals(signals, times, first_signal, time_offset)
     signals, times = process_signals2(signals, times)
     
     # Calculate the TDOAs
-    # tdoa2, tdoa3, tdoa4 = Find_TDOA(signals[0], signals[1], signals[2], signals[3])
     tdoa1, tdoa2 = Find_TDOA_2(signals[0], signals[1], signals[2], signals[3])
     
     # Tringulate position
-    # source_position = Triangulation(tdoa2, tdoa3, tdoa4)
     source_position = Triangulation2(tdoa1, tdoa2)
     
     # Remove audio files
@@ -125,9 +197,91 @@ def start():
     
     # Plot triangulated position on grid
     update_graph(source_position[0], source_position[1])
+
+def continuous_triangulation():
+    while not stop_triangulation:
+        single_triangulation()
+
+def run_sim():
+    # To run simulation with a live audio file uncomment the lines below:
     
-    # Plot all signals
-    # signal_plot(signals[0], signals[1], signals[2], signals[3], times[0], times[1], times[2], times[3])
+    # Send file to both Raspberry Pis
+    # with concurrent.futures.ThreadPoolExecutor() as executor:
+    #     executor.map(send_file_to_raspberry_pi, raspberry_pis)
+    
+    # update_status("Successfully sent start cmd to pis\n")
+    # print("Successfully sent start cmd to pis")
+    
+    # Extract signals from audio files
+    # signals, times, first_signal, time_offset = wait_for_audio_files()
+    
+    # SIMULATION SETUP: first parameter is a signal, 2nd is simulated position
+    # Uncomment lines below and comment all lines under it in start() function to run simulation
+    
+    sim_pos = [grid_width/2, grid_height/2]
+    sim_pos = [0.3, 0.2]
+    signals, times, first_signal, time_offset = read_wav_files()
+    create_sim2(signals[0], sim_pos)
+    
+    
+
+# GUI INITIALIZATION
+def create_app_window():
+    app = tk.Tk()
+    app.title("Acoustic Triangulation")
+    app.geometry("800x600")
+    
+    app.configure(bg="white")
+
+    # Create a style object for ttk widgets
+    style = ttk.Style()
+
+    # Choose a theme for your application (e.g., 'clam', 'winnative', 'alt', 'default', etc.)
+    style.theme_use("default")
+
+    # Create "Start" button with a custom style
+    style.configure("Start.TButton", font=("Helvetica", 12, "bold"), foreground="white", background="blue")
+    start_button = ttk.Button(app, text="Start", command=start_process, style="Start.TButton")
+    start_button.place(relx=0.1, rely=0.2, relwidth=0.2, relheight=0.1)
+
+    # Create "Stop" button with a custom style
+    style.configure("Stop.TButton", font=("Helvetica", 12, "bold"), foreground="white", background="red")
+    stop_button = ttk.Button(app, text="Stop", command=stop_process, style="Stop.TButton")
+    stop_button.place(relx=0.1, rely=0.35, relwidth=0.2, relheight=0.1)
+
+    # Create a frame for the XY graph
+    graph_frame = ttk.Frame(app)
+    graph_frame.place(relx=0.6, rely=0, relwidth=0.4, relheight=1)
+
+    # Create a Matplotlib figure
+    global plot
+    figure = Figure(figsize=(5, 4), dpi=100)
+    plot = figure.add_subplot(111)
+
+    # Set labels and title for the blank graph
+    plot.set_xlabel("X-axis")
+    plot.set_ylabel("Y-axis")
+    plot.set_xlim(0, 0.8)
+    plot.set_ylim(0, 0.5)
+    plot.set_title("Acoustic Triangulation")
+
+    # Add grid lines spaced 0.1 meters apart
+    plot.grid(which='both', axis='both', linestyle='--', color='gray', linewidth=0.5, alpha=0.5)
+    plot.set_xticks([i / 10 for i in range(9)])
+    plot.set_yticks([i / 10 for i in range(6)])
+
+    # Embed the Matplotlib figure in the Tkinter window
+    global canvas
+    canvas = FigureCanvasTkAgg(figure, master=graph_frame)
+    canvas_widget = canvas.get_tk_widget()
+    canvas_widget.pack(fill=tk.BOTH, expand=True)
+
+    # Create a text status box using scrolled text
+    global status_box
+    status_box = ScrolledText(app, wrap=tk.WORD, height=10, width=40)
+    status_box.place(relx=0.1, rely=0.5, relwidth=0.4, relheight=0.4)
+
+    return app
 
         
 def send_file_to_raspberry_pi(pi_host):
@@ -147,7 +301,7 @@ def send_file_to_raspberry_pi(pi_host):
 
 def wait_for_audio_files():
     
-    update_status("Waiting for audio signals froom raspberry Pis.")
+    update_status("Waiting for audio signals froom raspberry Pis.\n")
     print("Waiting for audio signals froom raspberry Pis.")
     time.sleep(5)
     
@@ -164,10 +318,10 @@ def wait_for_audio_files():
         if (num_audio_files == 2):
             break
         elif (num_audio_files < 2):
-            update_status("Still waiting for audio files from Pis...")
+            update_status("Still waiting for audio files from Pis...\n")
             time.sleep(0.05)
         elif (num_audio_files > 2):
-            update_status("There are more than 2 audio files in the audio folder\nPlease remove all files except the 2 that need to be processed.")
+            update_status("There are more than 2 audio files in the audio folder\nPlease remove all files except the 2 that need to be processed.\n")
             time.sleep(0.05)
     signals, times, first_signal, time_offset = read_wav_files()
     
@@ -176,7 +330,7 @@ def wait_for_audio_files():
 
 def read_wav_files():
     
-    update_status("Reading .wav files...")
+    update_status("Reading .wav files...\n")
     
     file_list = os.listdir(audio_folder)
     n = 0
@@ -196,7 +350,7 @@ def read_wav_files():
         left_channel = stereo_audio_data[:, 0]
         right_channel = stereo_audio_data[:, 1]
         
-        update_status("Stereo channels seperated successfully")
+        update_status("Stereo channels seperated successfully\n")
         
         if (file_name.__contains__("pi1")):
             signal_3 = np.array(right_channel)
@@ -213,12 +367,12 @@ def read_wav_files():
             num_samples = len(signal_2)
             t2 = np.linspace(0, (num_samples - 1) / sample_rate, num_samples)
     
-    update_status(".wav files successfully read!")
+    update_status(".wav files successfully read!\n")
     
     # Calculate differences in mic start times from time stamp in file name
     # time_offset_scalar = 0.6321205588 * 100
     time_offset = calculate_time_difference(filenames[0], filenames[1])
-    message = "Time difference between 2 pis: " + str(time_offset)
+    message = "Time difference between 2 pis: " + str(time_offset) + "\n"
     print(message)
     update_status(message)
     
@@ -371,7 +525,7 @@ def process_signals2(signals, times):
         cropped_signal, cropped_time = crop_signal(signal, times[n], pop_time, 0)
 
         
-        time_to_sample = 2
+        time_to_sample = 0.2
         num_samples = len(cropped_signal)
         num_samples = num_samples - time_to_sample*fs
         time_from_end = num_samples/fs
@@ -541,7 +695,7 @@ def paramfun2(source, diff1, diff2, mic1, mic2, mic3, mic4):
         np.sqrt((source[0] - mic4[0]) ** 2 + (source[1] - mic4[1]) ** 2) - np.sqrt((source[0] - mic3[0]) ** 2 + (source[1] - mic3[1]) ** 2) - diff2
     ]
     return F
-
+    
 def Triangulation(TDOA_2, TDOA_3, TDOA_4):
     # Calculate differences in distances between reference mic (mic 1) and other mics
     d_1_2 = TDOA_2 * speed_of_sound
@@ -618,7 +772,7 @@ def Triangulation2(tdoa1, tdoa2):
     print()
     
     # Calculate the intersection of hyperbolae from mics 1 & 2 and mics 3 & 4
-    start_pt = [grid_width, grid_height]
+    start_pt = [grid_width/2, grid_height/2]
     diff1 = d_1_2
     diff2 = d_3_4
 
@@ -761,57 +915,9 @@ def create_sim2(signal, position):
 
 if __name__ == "__main__":
     
-    # GUI INITIALIZATION
-    # Initialize positionX and positionY
-    positionX = 0
-    positionY = 0
-
-    # Create a Tkinter window
-    root = tk.Tk()
-    root.configure(bg="white")
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    root.geometry(f"{screen_width}x{screen_height}+0+0")
-
-    # Create "Start" button
-    start_button = tk.Button(root, text="Start", command=start_process)
-    start_button.place(relx=0.1, rely=0.2, relwidth=0.2, relheight=0.1)
-
-    # Create "Stop" button
-    stop_button = tk.Button(root, text="Stop", command=stop_process)
-    stop_button.place(relx=0.1, rely=0.35, relwidth=0.2, relheight=0.1)
-
-    # Create a frame for the XY graph
-    graph_frame = ttk.Frame(root)
-    graph_frame.place(relx=0.6, rely=0, relwidth=0.4, relheight=1)
-
-    # Create a Matplotlib figure
-    figure = Figure(figsize=(5, 4), dpi=100)
-    plot = figure.add_subplot(111)
-
-    # Set labels and title for the blank graph
-    plot.set_xlabel("X-axis")
-    plot.set_ylabel("Y-axis")
-    plot.set_xlim(0, 0.8)
-    plot.set_ylim(0, 0.5)
-    plot.set_title("Acoustic Triangulation")
-
-    # Add grid lines spaced 0.1 meters apart
-    plot.grid(which='both', axis='both', linestyle='--', color='gray', linewidth=0.5, alpha=0.5)
-    plot.set_xticks([i / 10 for i in range(9)])
-    plot.set_yticks([i / 10 for i in range(6)])  # Corrected line
-
-    # Embed the Matplotlib figure in the Tkinter window
-    canvas = FigureCanvasTkAgg(figure, master=graph_frame)
-    canvas_widget = canvas.get_tk_widget()
-    canvas_widget.pack()
-    
-    # Create text status box
-    status_box = Text(root, wrap="word", height=10, width=40)
-    status_box.place(relx=0.1, rely=0.5, relwidth=0.4, relheight=0.4)
-
-    # Start the Tkinter event loop
-    root.mainloop()
+    # Initialize and start GUI
+    app = create_app_window()
+    app.mainloop()
     
     
     

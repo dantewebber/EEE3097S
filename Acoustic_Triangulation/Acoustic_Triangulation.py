@@ -26,6 +26,12 @@ speed_of_sound = 343  # Speed of sound in the environment (m/s)
 raspberry_pis = ["pi@raspberrypi.local", "pi@raspberrypi1.local"]
 fs = 48000 # sample rate (Hz)
 
+# Define positions of microphones
+mic1_pos = [0, grid_height]
+mic2_pos = [grid_width, grid_height]
+mic3_pos = [grid_width, grid_height]
+mic4_pos = [grid_width, 0]
+
 # File paths
 current_directory = os.getcwd()
 audio_folder = os.path.join(current_directory, "audio")
@@ -80,6 +86,7 @@ def update_graph(positionX, positionY):
 # Start recording and get data from raspberry pis
 
 def start():
+    
     # Send file to both Raspberry Pis
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(send_file_to_raspberry_pi, raspberry_pis)
@@ -89,18 +96,38 @@ def start():
     update_status("Successfully sent start cmd to pis")
     print("Successfully sent start cmd to pis")
     
+    # Extract signals from audio files
     signals, times, first_signal, time_offset = wait_for_audio_files()
-    signals, times = process_signals(signals, times, first_signal, time_offset)
     
-    tdoa2, tdoa3, tdoa4 = Find_TDOA(signals[0], signals[1], signals[2], signals[3])
-    sound_position = Triangulation(tdoa2, tdoa3, tdoa4)
+    # SIMULATION SETUP: first parameter is a signal, 2nd is simulated position
+    # Uncomment lines below and comment all lines under it in start() function to run simulation
     
+    sim_pos = [grid_width/2, grid_height/2]
+    sim_pos = [0.3, 0.2]
+    # signals, times, first_signal, time_offset = read_wav_files()
+    # create_sim2(signals[0], sim_pos)
+    
+    # Process signals
+    # signals, times = process_signals(signals, times, first_signal, time_offset)
+    signals, times = process_signals2(signals, times)
+    
+    # Calculate the TDOAs
+    # tdoa2, tdoa3, tdoa4 = Find_TDOA(signals[0], signals[1], signals[2], signals[3])
+    tdoa1, tdoa2 = Find_TDOA_2(signals[0], signals[1], signals[2], signals[3])
+    
+    # Tringulate position
+    # source_position = Triangulation(tdoa2, tdoa3, tdoa4)
+    source_position = Triangulation2(tdoa1, tdoa2)
+    
+    # Remove audio files
     command = f"rm {audio_folder}/*"
     subprocess.call(command, shell=True)
     
-    update_graph(sound_position[0], sound_position[1])
+    # Plot triangulated position on grid
+    update_graph(source_position[0], source_position[1])
     
-    signal_plot(signals[0], signals[1], signals[2], signals[3], times[0], times[1], times[2], times[3])
+    # Plot all signals
+    # signal_plot(signals[0], signals[1], signals[2], signals[3], times[0], times[1], times[2], times[3])
 
         
 def send_file_to_raspberry_pi(pi_host):
@@ -334,6 +361,31 @@ def process_signals(signals, times, first_signal, time_offset):
     
     return processed_signals, processed_times
 
+def process_signals2(signals, times):
+    processed_signals = signals
+    processed_times = times
+    n = 0
+    for signal in signals:
+        # Remove 'pop' from start of mic recording
+        pop_time = 0.5
+        cropped_signal, cropped_time = crop_signal(signal, times[n], pop_time, 0)
+
+        
+        time_to_sample = 2
+        num_samples = len(cropped_signal)
+        num_samples = num_samples - time_to_sample*fs
+        time_from_end = num_samples/fs
+        
+        cropped_signal, cropped_time = crop_signal(cropped_signal, cropped_time, 0, time_from_end)
+        
+        processed_signals[n] = cropped_signal
+        processed_times[n] = cropped_time
+        
+        n = n+1
+        
+    return processed_signals, processed_times
+
+
 # Plots 4 signals
 def signal_plot(sim_sig_m1, sim_sig_m2, sim_sig_m3, sim_sig_m4, t1, t2, t3, t4):
     
@@ -462,11 +514,31 @@ def Find_TDOA(signal_1, signal_2, signal_3, signal_4):
     
     return TDOA_m2, TDOA_m3, TDOA_m4
 
+def Find_TDOA_2(signal1, signal2, signal3, signal4):
+    # Finds the tdoa between 1 & 2 with 1 as ref mic
+    tdoa1 = find_signal_delay(signal2, signal1, fs)
+    
+    # Finds the tdoa between 3 & 4 with 4 as ref mic
+    tdoa2 = find_signal_delay(signal3, signal4, fs)
+    
+    # Print results
+    print(f"TDOA between mics 1 & 2: {tdoa1:.7f}")
+    print(f"TDOA between mics 3 & 4: {tdoa2:.7f}")
+    
+    return tdoa1, tdoa2
+
 # Function to calculate the intersection of hyperbolas
 def paramfun(x, diff1, diff2, x1, x2, y1, y2):
     F = [
-        np.sqrt(x[0] ** 2 + x[1] ** 2) - np.sqrt((x[0] - x1) ** 2 + (x[1] - y1) ** 2) + diff1,
-        np.sqrt(x[0] ** 2 + x[1] ** 2) - np.sqrt((x[0] - x2) ** 2 + (x[1] - y2) ** 2) + diff2
+        np.sqrt(x[0] ** 2 + x[1] ** 2) - np.sqrt((x[0] - x1) ** 2 + (x[1] - y1) ** 2) - diff1,
+        np.sqrt(x[0] ** 2 + x[1] ** 2) - np.sqrt((x[0] - x2) ** 2 + (x[1] - y2) ** 2) - diff2
+    ]
+    return F
+
+def paramfun2(source, diff1, diff2, mic1, mic2, mic3, mic4):
+    F = [
+        np.sqrt((source[0] - mic1[0]) ** 2 + (source[1] - mic1[1]) ** 2) - np.sqrt((source[0] - mic2[0]) ** 2 + (source[1] - mic2[1]) ** 2) + diff1,
+        np.sqrt((source[0] - mic4[0]) ** 2 + (source[1] - mic4[1]) ** 2) - np.sqrt((source[0] - mic3[0]) ** 2 + (source[1] - mic3[1]) ** 2) - diff2
     ]
     return F
 
@@ -492,7 +564,7 @@ def Triangulation(TDOA_2, TDOA_3, TDOA_4):
     diff2 = d_1_4
 
     # Solve for the intersection
-    x0 = [0, 0]
+    x0 = [grid_width/2, grid_height/2]
     x_2_4 = fsolve(paramfun, x0, args=(diff1, diff2, x1, x2, y1, y2))
 
     # Calculate the intersection of hyperbolae from mic 2 & ref mic, and mic 3 & ref mic
@@ -533,8 +605,161 @@ def Triangulation(TDOA_2, TDOA_3, TDOA_4):
     print('Predicted Sound Source Position average from 3 readings above:', x_ave)
     
     return x_ave
+
+def Triangulation2(tdoa1, tdoa2):
+    # Calculate differences in distances between sound source and mics 1 & 2
+    d_1_2 = tdoa1 * speed_of_sound
+    # Calculate differences in distances between sound source and mics 3 & 4
+    d_3_4 = tdoa2 * speed_of_sound
     
-if __name__ == "__main__": 
+    print('Calculated d_1_2: %.7f' % d_1_2)
+    print()
+    print('Calculated d_3_4: %.7f' % d_3_4)
+    print()
+    
+    # Calculate the intersection of hyperbolae from mics 1 & 2 and mics 3 & 4
+    start_pt = [grid_width, grid_height]
+    diff1 = d_1_2
+    diff2 = d_3_4
+
+    source_position = fsolve(paramfun2, start_pt, args=(diff1, diff2, mic1_pos, mic2_pos, mic3_pos, mic4_pos)) 
+    
+    pos = [source_position[0], source_position[1]]
+    
+    print(f"Predicted Sound Source Position: {pos}")
+    
+    return source_position
+    
+def Find_record_delay(signals):
+    pop_time = 0.3
+    pop_samples = int(pop_time * fs)
+    
+    signal1 = signals[0][:pop_samples]
+    signal2 = signals[1][:pop_samples]
+    signal3 = signals[2][:pop_samples]
+    signal4 = signals[3][:pop_samples]
+    
+    del_1_2 = find_signal_delay(signal2, signal1, fs)
+    del_1_3 = find_signal_delay(signal3, signal1, fs)
+    del_1_4 = find_signal_delay(signal4, signal1, fs)
+    
+    del_2_3 = find_signal_delay(signal3, signal2, fs)
+    del_2_4 = find_signal_delay(signal4, signal2, fs)
+    
+    del_3_4 = find_signal_delay(signal4, signal3, fs)
+    
+    print(f"del_1_2: {del_1_2}")
+    print(f"del_1_3: {del_1_3}")
+    print(f"del_1_4: {del_1_4}")
+    print(f"del_2_3: {del_2_3}")
+    print(f"del_2_4: {del_2_4}")
+    print(f"del_3_4: {del_3_4}")
+    
+    
+    
+
+def create_sim(signal, position):
+    
+    # Shift signal based on position
+    
+    # Calulate distance from each of the microphones to the simulated position
+    distance_to_1 = np.sqrt((mic1_pos[0] - position[0])**2 + (mic1_pos[1] - position[1])**2)
+    distance_to_2 = np.sqrt((mic2_pos[0] - position[0])**2 + (mic2_pos[1] - position[1])**2)
+    distance_to_3 = np.sqrt((mic3_pos[0] - position[0])**2 + (mic3_pos[1] - position[1])**2)
+    distance_to_4 = np.sqrt((mic4_pos[0] - position[0])**2 + (mic4_pos[1] - position[1])**2)
+    
+    # Calculate time difference of arrivals between all of the microphones and the reference microphone (mic 1)
+    tdoa_1_2 = (distance_to_1 - distance_to_2)/speed_of_sound
+    tdoa_1_3 = (distance_to_1 - distance_to_3)/speed_of_sound
+    tdoa_1_4 = (distance_to_1 - distance_to_4)/speed_of_sound
+    
+    offset = int(0.1*fs)
+    signal1 = signal[offset:]
+    
+    if tdoa_1_2 < 0:
+        signal2 = signal[offset-int(tdoa_1_2*fs):]
+    elif tdoa_1_2==0:
+        signal2 =  signal[offset:]
+    else:
+        signal2 = signal[offset-int(tdoa_1_2*fs):]
+    
+    if tdoa_1_3 < 0:
+        signal3 = signal[offset-int(tdoa_1_3*fs):]
+    elif tdoa_1_3==0:
+        signal3 =  signal[offset:]
+    else:
+        signal3 = signal[offset-int(tdoa_1_3*fs):]
+        
+    if tdoa_1_4 < 0:
+        signal4 = signal[offset-int(tdoa_1_4*fs):]
+    elif tdoa_1_4==0:
+        signal4 =  signal[offset:]
+    else:
+        signal4 = signal[offset-int(tdoa_1_4*fs):]
+    
+    a = int(2*fs)
+    signal1 = signal1[:a]
+    signal2 = signal2[:a]
+    signal3 = signal3[:a]
+    signal4 = signal4[:a]
+    
+    tdoa2, tdoa3, tdoa4 = Find_TDOA(signal1, signal2, signal3, signal4)
+    sound_position = Triangulation(tdoa2, tdoa3, tdoa4)
+    
+    print(f"Actual tdoas (2,3,4): {tdoa_1_2}, {tdoa_1_3}, {tdoa_1_4} .......calculated (2, 3, 4): {tdoa2}, {tdoa3}, {tdoa4}")
+    print(f"Actual pos: {position}..... Calculated pos: {sound_position}")
+    
+    update_graph(sound_position[0], sound_position[1])
+    
+
+def create_sim2(signal, position):
+    
+    # Shift signal based on position
+    
+    # Calulate distance from each of the microphones to the simulated position
+    distance_to_1 = np.sqrt((mic1_pos[0] - position[0])**2 + (mic1_pos[1] - position[1])**2)
+    distance_to_2 = np.sqrt((mic2_pos[0] - position[0])**2 + (mic2_pos[1] - position[1])**2)
+    distance_to_3 = np.sqrt((mic3_pos[0] - position[0])**2 + (mic3_pos[1] - position[1])**2)
+    distance_to_4 = np.sqrt((mic4_pos[0] - position[0])**2 + (mic4_pos[1] - position[1])**2)
+    
+    # Calculate time difference of arrivals between all of the microphones and the reference mics
+    tdoa_2_1 = (distance_to_2 - distance_to_1)/speed_of_sound
+    tdoa_3_4 = (distance_to_3 - distance_to_4)/speed_of_sound
+    
+    offset = int(0.1*fs)
+    signal2 = signal[offset:]
+    signal3 = signal[offset:]
+    
+    if tdoa_2_1 < 0:
+        signal1 = signal[offset-int(tdoa_2_1*fs):]
+    elif tdoa_2_1==0:
+        signal1 =  signal[offset:]
+    else:
+        signal1 = signal[offset-int(tdoa_2_1*fs):]
+    
+    if tdoa_3_4 < 0:
+        signal4 = signal[offset-int(tdoa_3_4*fs):]
+    elif tdoa_3_4==0:
+        signal4 =  signal[offset:]
+    else:
+        signal4 = signal[offset-int(tdoa_3_4*fs):]
+    
+    a = int(2*fs)
+    signal1 = signal1[:a]
+    signal2 = signal2[:a]
+    signal3 = signal3[:a]
+    signal4 = signal4[:a]
+    
+    tdoa12, tdoa34 = Find_TDOA_2(signal1, signal2, signal3, signal4)
+    sound_position = Triangulation2(tdoa12, tdoa34)
+    
+    print(f"Actual tdoas (1-2, 3-4): {tdoa_2_1}, {tdoa_3_4}.......calculated (1-2, 3-4): {tdoa12}, {tdoa34}")
+    print(f"Actual pos: {position}..... Calculated pos: {sound_position}")
+    
+    update_graph(sound_position[0], sound_position[1])
+    
+
+if __name__ == "__main__":
     
     # GUI INITIALIZATION
     # Initialize positionX and positionY
@@ -587,7 +812,3 @@ if __name__ == "__main__":
 
     # Start the Tkinter event loop
     root.mainloop()
-    
-    
-    
-    
