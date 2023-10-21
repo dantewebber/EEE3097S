@@ -79,6 +79,9 @@ def initializeSSH():
     pi2_ssh.connect(pi2_hostname, username="pi", pkey=mykey)
 
 def record_send():
+    
+    update_status("Recording audio\n")
+    
     # Send the start command to both Raspberry Pi devices
     pi1_stdin, pi1_stdout, pi1_stderr = pi1_ssh.exec_command(start_command1)
     pi2_stdin, pi2_stdout, pi2_stderr = pi2_ssh.exec_command(start_command2)
@@ -91,7 +94,9 @@ def record_send():
         pi2_exit_status = pi2_stdout.channel.recv_exit_status()
         if pi1_exit_status == 0 and pi2_exit_status == 0:
             break
-
+    
+    update_status("Finished recording, sending files.\n")
+    
     # Send files to master laptop
     pi1_stdin, pi1_stdout, pi1_stderr = pi1_ssh.exec_command(end_command1)
     pi2_stdin, pi2_stdout, pi2_stderr = pi2_ssh.exec_command(end_command1)
@@ -101,9 +106,9 @@ def record_send():
         pi2_exit_status = pi2_stdout.channel.recv_exit_status()
         if pi1_exit_status == 0 and pi2_exit_status == 0:
             break
-
-    # Send command to start audio file reading here
-
+    
+    update_status("Files sent\n")
+    
     pi1_ssh.exec_command(end)
     pi2_ssh.exec_command(end)
 
@@ -137,6 +142,9 @@ def stop_process():
     global stop_triangulation
     stop_triangulation = True
 
+def exit_program():
+    exit()
+
 # Function to update the graph with a red dot
 def update_graph(positionX, positionY):
     global plot
@@ -164,6 +172,7 @@ def update_graph(positionX, positionY):
 def start():
     
     # single_triangulation()
+    initializeSSH()
     
     task_thread = threading.Thread(target=continuous_triangulation)
     task_thread.start()
@@ -173,11 +182,10 @@ def start():
     
 def single_triangulation():
     # Send file to both Raspberry Pis
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.map(send_file_to_raspberry_pi, raspberry_pis)
+    # with concurrent.futures.ThreadPoolExecutor() as executor:
+    #     executor.map(send_file_to_raspberry_pi, raspberry_pis)
     
-    update_status("Successfully sent start cmd to pis\n")
-    print("Successfully sent start cmd to pis")
+    record_send()
     
     # Extract signals from audio files
     signals, times, first_signal, time_offset = wait_for_audio_files()
@@ -201,6 +209,7 @@ def single_triangulation():
 def continuous_triangulation():
     while not stop_triangulation:
         single_triangulation()
+    closeSSH()
 
 def run_sim():
     # To run simulation with a live audio file uncomment the lines below:
@@ -242,12 +251,17 @@ def create_app_window():
     # Create "Start" button with a custom style
     style.configure("Start.TButton", font=("Helvetica", 12, "bold"), foreground="white", background="blue")
     start_button = ttk.Button(app, text="Start", command=start_process, style="Start.TButton")
-    start_button.place(relx=0.1, rely=0.2, relwidth=0.2, relheight=0.1)
+    start_button.place(relx=0.1, rely=0.1, relwidth=0.2, relheight=0.1)
 
     # Create "Stop" button with a custom style
     style.configure("Stop.TButton", font=("Helvetica", 12, "bold"), foreground="white", background="red")
     stop_button = ttk.Button(app, text="Stop", command=stop_process, style="Stop.TButton")
-    stop_button.place(relx=0.1, rely=0.35, relwidth=0.2, relheight=0.1)
+    stop_button.place(relx=0.1, rely=0.25, relwidth=0.2, relheight=0.1)
+    
+    # Create an "Exit" button
+    style.configure("Exit.TButton", font=("Helvetica", 12, "bold"), foreground="white", background="gray")
+    exit_button = ttk.Button(app, text="Exit", command=exit_program, style="Exit.TButton")
+    exit_button.place(relx=0.1, rely=0.85, relwidth=0.1, relheight=0.05)
 
     # Create a frame for the XY graph
     graph_frame = ttk.Frame(app)
@@ -279,7 +293,7 @@ def create_app_window():
     # Create a text status box using scrolled text
     global status_box
     status_box = ScrolledText(app, wrap=tk.WORD, height=10, width=40)
-    status_box.place(relx=0.1, rely=0.5, relwidth=0.4, relheight=0.4)
+    status_box.place(relx=0.1, rely=0.4, relwidth=0.4, relheight=0.4)
 
     return app
 
@@ -303,14 +317,15 @@ def wait_for_audio_files():
     
     update_status("Waiting for audio signals froom raspberry Pis.\n")
     print("Waiting for audio signals froom raspberry Pis.")
-    time.sleep(5)
     
-    while True:
-        if os.path.isfile("stop0.txt") and os.path.isfile("stop1.txt"):
-            command = f"rm {current_directory}/stop0.txt && rm {current_directory}/stop1.txt"
-            subprocess.call(command, shell=True)
-            break
-        time.sleep(0.05)
+    # time.sleep(2)
+    
+    # while True:
+    #     if os.path.isfile("stop0.txt") and os.path.isfile("stop1.txt"):
+    #         command = f"rm {current_directory}/stop0.txt && rm {current_directory}/stop1.txt"
+    #         subprocess.call(command, shell=True)
+    #         break
+    #     time.sleep(0.05)
     
     while(True):
         num_audio_files = len(os.listdir(audio_folder))
@@ -373,8 +388,8 @@ def read_wav_files():
     # time_offset_scalar = 0.6321205588 * 100
     time_offset = calculate_time_difference(filenames[0], filenames[1])
     message = "Time difference between 2 pis: " + str(time_offset) + "\n"
-    print(message)
-    update_status(message)
+    # print(message)
+    # update_status(message)
     
     if ((time_offset < 0) and (filenames[0].__contains__("pi_"))):
         # pi1 started before pi0
@@ -457,7 +472,7 @@ def process_signals(signals, first_signal, time_offset):
     n = 0
     for signal in signals:
         # Remove 'pop' from start of mic recording
-        pop_time = 0.8
+        pop_time = 0.5
         cropped_signal = crop_signal(signal, pop_time, 0)
         
         # Remove time offset
@@ -521,7 +536,7 @@ def process_signals2(signals, times):
     n = 0
     for signal in signals:
         # Remove 'pop' from start of mic recording
-        pop_time = 0.5
+        pop_time = 0.3
         cropped_signal, cropped_time = crop_signal(signal, times[n], pop_time, 0)
 
         
@@ -781,6 +796,8 @@ def Triangulation2(tdoa1, tdoa2):
     pos = [source_position[0], source_position[1]]
     
     print(f"Predicted Sound Source Position: {pos}")
+    message = f"Predicted Sound Source Position: {pos}\n"
+    update_status(message)
     
     return source_position
     
